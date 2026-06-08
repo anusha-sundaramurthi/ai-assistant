@@ -1,14 +1,17 @@
 from fastapi import FastAPI, UploadFile, Request
 from fastapi.responses import StreamingResponse, HTMLResponse
+from fastapi.websockets import WebSocket
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
 from src.ingest import ingest_pdf
 from src.vectorstores import init_qdrant, clear_qdrant
 from src.generator import generate_answer, clear_memory
 import httpx
-import os
+import websockets
+import asyncio
 
-STREAMLIT_URL = "http://localhost:8501"
+STREAMLIT_URL = "http://127.0.0.1:8501"
+STREAMLIT_WS  = "ws://127.0.0.1:8501"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -61,6 +64,39 @@ async def clear_database():
     clear_qdrant()
     return {"message": "Database cleared. Please re-upload your PDF guides."}
 
+# ── WebSocket proxy ───────────────────────────────────────
+@app.websocket("/{path:path}")
+async def websocket_proxy(websocket: WebSocket, path: str):
+    await websocket.accept()
+    target = f"{STREAMLIT_WS}/{path}"
+    try:
+        async with websockets.connect(
+            target,
+            additional_headers={"Host": "127.0.0.1:8501"}
+        ) as ws_target:
+            async def forward_to_target():
+                try:
+                    async for message in websocket.iter_bytes():
+                        await ws_target.send(message)
+                except Exception:
+                    pass
+
+            async def forward_to_client():
+                try:
+                    async for message in ws_target:
+                        if isinstance(message, bytes):
+                            await websocket.send_bytes(message)
+                        else:
+                            await websocket.send_text(message)
+                except Exception:
+                    pass
+
+            await asyncio.gather(forward_to_target(), forward_to_client())
+    except Exception as e:
+        print(f"[WebSocket proxy error] {e}")
+        await websocket.close()
+
+# ── HTTP proxy ────────────────────────────────────────────
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"])
 async def proxy_streamlit(request: Request, path: str):
     url = f"{STREAMLIT_URL}/{path}"
