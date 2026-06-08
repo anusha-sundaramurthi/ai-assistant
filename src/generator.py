@@ -301,10 +301,11 @@ Conversation so far:
 
 # ── 7. Main answer function ───────────────────────────────
 def generate_answer(
-    query:       str,
-    session_id:  str  = "default",
-    use_general: bool = False,
-    language:    str  = "English"
+    query:           str,
+    session_id:      str  = "default",
+    use_general:     bool = False,
+    language:        str  = "English",
+    collection_name: str  = "default"   
 ) -> dict:
     memory       = get_memory(session_id)
     history_vars = memory.load_memory_variables({})
@@ -353,7 +354,7 @@ def generate_answer(
         return {"answer": answer, "rewritten_query": rewritten_query, "has_pdf_context": False}
 
     # ── Path B: PDF retrieval ─────────────────────────────
-    docs    = retrieve_docs(rewritten_query)
+    docs = retrieve_docs(rewritten_query, collection_name)
     context = "\n".join(docs)
 
     if not context.strip():

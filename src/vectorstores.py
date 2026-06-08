@@ -2,40 +2,30 @@ from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams
 from src.config import QDRANT_HOST, QDRANT_API_KEY, COLLECTION_NAME
 
+VECTOR_SIZE = 1024  # BAAI/bge-m3
 
-def get_qdrant_client():
-    return QdrantClient(
-        url=QDRANT_HOST,
-        api_key=QDRANT_API_KEY
-    )
+def get_qdrant_client() -> QdrantClient:
+    return QdrantClient(url=QDRANT_HOST, api_key=QDRANT_API_KEY)
 
-
-def init_qdrant():
-    client = get_qdrant_client()
-
-    existing_collections = [col.name for col in client.get_collections().collections]
-    if COLLECTION_NAME not in existing_collections:
-        print(f"Creating collection '{COLLECTION_NAME}'...")
+def _ensure_collection(client: QdrantClient, collection_name: str):
+    existing = [c.name for c in client.get_collections().collections]
+    if collection_name not in existing:
+        print(f"[Qdrant] Creating collection '{collection_name}'...")
         client.recreate_collection(
-            collection_name=COLLECTION_NAME,
-            vectors_config=VectorParams(size=1024, distance=Distance.COSINE),
+            collection_name=collection_name,
+            vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
         )
 
+def init_qdrant(collection_name: str = None):
+    client = get_qdrant_client()
+    name   = collection_name or COLLECTION_NAME
+    _ensure_collection(client, name)
     return client
 
-
-def clear_qdrant():
-    """
-    Deletes and recreates the collection — wipes ALL stored chunks.
-    Call this from the /clear-db endpoint to do a fresh start.
-    """
+def clear_qdrant(collection_name: str = None):
     client = get_qdrant_client()
-    print(f"[Qdrant] Deleting collection '{COLLECTION_NAME}'...")
-    client.delete_collection(collection_name=COLLECTION_NAME)
-    print(f"[Qdrant] Recreating collection '{COLLECTION_NAME}'...")
-    client.recreate_collection(
-        collection_name=COLLECTION_NAME,
-        vectors_config=VectorParams(size=1024, distance=Distance.COSINE),
-    )
-    print(f"[Qdrant] Collection cleared and ready.")
+    name   = collection_name or COLLECTION_NAME
+    print(f"[Qdrant] Clearing collection '{name}'...")
+    client.delete_collection(collection_name=name)
+    _ensure_collection(client, name)
     return client
