@@ -11,6 +11,7 @@ langchain-community
 langchain-text-splitters
 groq
 google-generativeai
+openai
 pymupdf
 pydantic
 requests

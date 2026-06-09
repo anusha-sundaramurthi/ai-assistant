@@ -5,15 +5,14 @@ load_dotenv()
 
 QDRANT_HOST     = os.getenv("QDRANT_HOST")
 QDRANT_API_KEY  = os.getenv("QDRANT_API_KEY")
-COLLECTION_NAME = os.getenv("COLLECTION_NAME", "default")  # fallback only
+COLLECTION_NAME = os.getenv("COLLECTION_NAME", "default")
 
 GROQ_API_KEY    = os.getenv("GROQ_API_KEY")
 GEMINI_API_KEY  = os.getenv("GEMINI_API_KEY")
+NVIDIA_API_KEY  = os.getenv("NVIDIA_API_KEY")      # ← NEW
 
+MASTER_API_KEY  = os.getenv("MASTER_API_KEY")
 
-MASTER_API_KEY  = os.getenv("MASTER_API_KEY")  # your secret admin key
-
-EMBEDDING_MODEL = "BAAI/bge-m3"
 LLM_MODEL       = "llama-3.3-70b-versatile"
 FALLBACK_MODEL  = "gemini-2.0-flash"
 
