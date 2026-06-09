@@ -1,0 +1,1018 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Widget — Admin</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0f1117;
+    --surface:  #1a1d27;
+    --surface2: #22263a;
+    --border:   #2e3348;
+    --accent:   #4a9eff;
+    --accent2:  #7c5cfc;
+    --success:  #22c55e;
+    --danger:   #ef4444;
+    --warning:  #f59e0b;
+    --text:     #e8eaf0;
+    --muted:    #8b90a7;
+    --radius:   12px;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  /* ── Layout ── */
+  .shell { display: flex; min-height: 100vh; }
+
+  .sidebar {
+    width: 240px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 24px 0;
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+  }
+
+  .sidebar-logo {
+    padding: 0 20px 24px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 12px;
+  }
+  .sidebar-logo h1 {
+    font-size: 17px;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .sidebar-logo p { color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 20px;
+    color: var(--muted);
+    cursor: pointer;
+    border-radius: 0;
+    transition: all 0.15s;
+    font-size: 13.5px;
+    border-left: 3px solid transparent;
+  }
+  .nav-item:hover { color: var(--text); background: var(--surface2); }
+  .nav-item.active { color: var(--accent); background: rgba(74,158,255,0.08); border-left-color: var(--accent); }
+  .nav-icon { font-size: 16px; width: 20px; text-align: center; }
+
+  .main { flex: 1; padding: 32px; overflow-y: auto; }
+
+  /* ── Auth gate ── */
+  #auth-gate {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: var(--bg);
+  }
+  .auth-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 40px;
+    width: 380px;
+    text-align: center;
+  }
+  .auth-card h2 { font-size: 22px; margin-bottom: 6px; }
+  .auth-card p  { color: var(--muted); margin-bottom: 28px; font-size: 13px; }
+
+  /* ── Page sections ── */
+  .page { display: none; }
+  .page.active { display: block; }
+
+  .page-header { margin-bottom: 28px; }
+  .page-header h2 { font-size: 22px; font-weight: 700; }
+  .page-header p  { color: var(--muted); margin-top: 4px; font-size: 13px; }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+  .card-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* ── Stats row ── */
+  .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 28px; }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+  .stat-label { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+  .stat-value { font-size: 28px; font-weight: 700; }
+  .stat-value.accent  { color: var(--accent); }
+  .stat-value.success { color: var(--success); }
+  .stat-value.purple  { color: var(--accent2); }
+
+  /* ── Form ── */
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  .form-group.full { grid-column: 1 / -1; }
+  label { font-size: 12px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  input[type="text"],
+  input[type="password"],
+  input[type="color"],
+  textarea,
+  select {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 10px 14px;
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s;
+    width: 100%;
+  }
+  input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 80px; }
+  input[type="color"] { padding: 4px 8px; height: 42px; cursor: pointer; }
+
+  /* ── Buttons ── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: none;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.1s;
+    font-family: inherit;
+  }
+  .btn:hover { opacity: 0.88; }
+  .btn:active { transform: scale(0.97); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn-primary  { background: var(--accent); color: white; }
+  .btn-success  { background: var(--success); color: white; }
+  .btn-danger   { background: var(--danger); color: white; }
+  .btn-ghost    { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-sm       { padding: 6px 12px; font-size: 12px; }
+
+  /* ── Widget list ── */
+  .widget-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+  .widget-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: border-color 0.15s;
+  }
+  .widget-card:hover { border-color: var(--accent); }
+  .widget-card-header {
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .widget-color-dot {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+  }
+  .widget-card-info { flex: 1; min-width: 0; }
+  .widget-card-name { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .widget-card-id   { color: var(--muted); font-size: 12px; font-family: monospace; margin-top: 2px; }
+  .widget-card-body { padding: 0 16px 16px; }
+  .widget-card-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .badge-blue   { background: rgba(74,158,255,0.15); color: var(--accent); }
+  .badge-green  { background: rgba(34,197,94,0.15); color: var(--success); }
+  .badge-purple { background: rgba(124,92,252,0.15); color: var(--accent2); }
+  .widget-card-actions { display: flex; gap: 8px; }
+
+  /* ── Embed code ── */
+  .code-block {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    color: #a8d8ff;
+    word-break: break-all;
+    line-height: 1.6;
+    position: relative;
+  }
+  .copy-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .copy-btn:hover { color: var(--text); border-color: var(--accent); }
+
+  /* ── Upload area ── */
+  .upload-area {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 32px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .upload-area:hover, .upload-area.drag-over {
+    border-color: var(--accent);
+    background: rgba(74,158,255,0.05);
+  }
+  .upload-icon { font-size: 36px; margin-bottom: 10px; }
+  .upload-area p { color: var(--muted); font-size: 13px; }
+  .upload-area strong { color: var(--text); }
+
+  /* ── Toast ── */
+  #toast-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 99999;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .toast {
+    padding: 12px 18px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    animation: toast-in 0.25s ease;
+    max-width: 320px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .toast-success { background: #166534; color: #bbf7d0; border: 1px solid #22c55e44; }
+  .toast-error   { background: #7f1d1d; color: #fecaca; border: 1px solid #ef444444; }
+  .toast-info    { background: #1e3a5f; color: #bfdbfe; border: 1px solid #4a9eff44; }
+
+  /* ── Modal ── */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    backdrop-filter: blur(4px);
+  }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    width: 500px;
+    max-width: calc(100vw - 32px);
+    max-height: 85vh;
+    overflow-y: auto;
+  }
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+  }
+  .modal-header h3 { font-size: 18px; font-weight: 700; }
+  .modal-close { background: none; border: none; color: var(--muted); font-size: 20px; cursor: pointer; }
+  .modal-close:hover { color: var(--text); }
+  .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+
+  /* ── Divider ── */
+  .divider { height: 1px; background: var(--border); margin: 20px 0; }
+
+  /* ── Loading ── */
+  .spinner {
+    width: 20px; height: 20px;
+    border: 2px solid rgba(255,255,255,0.2);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    display: inline-block;
+  }
+
+  .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
+  .empty-state .empty-icon { font-size: 48px; margin-bottom: 12px; }
+  .empty-state h3 { color: var(--text); font-size: 16px; margin-bottom: 6px; }
+
+  @keyframes spin     { to { transform: rotate(360deg); } }
+  @keyframes toast-in { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+
+  /* ── Responsive ── */
+  @media (max-width: 768px) {
+    .sidebar { display: none; }
+    .main { padding: 20px; }
+    .form-grid { grid-template-columns: 1fr; }
+    .stats-row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Auth Gate -->
+<div id="auth-gate">
+  <div class="auth-card">
+    <div style="font-size:40px;margin-bottom:16px;">🤖</div>
+    <h2>AI Widget Admin</h2>
+    <p>Enter your master API key to continue</p>
+    <div class="form-group" style="margin-bottom:16px;text-align:left;">
+      <label>Master API Key</label>
+      <input type="password" id="master-key-input" placeholder="Enter master key..." />
+    </div>
+    <div class="form-group" style="margin-bottom:16px;text-align:left;">
+      <label>API Base URL</label>
+      <input type="text" id="api-url-input" placeholder="https://your-api.onrender.com" />
+    </div>
+    <button class="btn btn-primary" style="width:100%;" onclick="login()">Login →</button>
+    <p id="auth-error" style="color:var(--danger);margin-top:12px;font-size:13px;"></p>
+  </div>
+</div>
+
+<!-- Main App -->
+<div id="app" class="shell" style="display:none;">
+  <div class="sidebar">
+    <div class="sidebar-logo">
+      <h1>AI Widget</h1>
+      <p>Admin Dashboard</p>
+    </div>
+    <div class="nav-item active" onclick="showPage('dashboard')">
+      <span class="nav-icon">📊</span> Dashboard
+    </div>
+    <div class="nav-item" onclick="showPage('widgets')">
+      <span class="nav-icon">🧩</span> Widgets
+    </div>
+    <div class="nav-item" onclick="showPage('create')">
+      <span class="nav-icon">➕</span> Create Widget
+    </div>
+    <div class="nav-item" onclick="showPage('upload')">
+      <span class="nav-icon">📄</span> Upload PDF
+    </div>
+    <div style="margin-top:auto;padding:16px 20px;border-top:1px solid var(--border);">
+      <div style="color:var(--muted);font-size:11px;margin-bottom:8px;">LOGGED IN AS</div>
+      <div style="font-size:12px;font-family:monospace;color:var(--accent);" id="sidebar-url"></div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%;" onclick="logout()">Logout</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <!-- Dashboard -->
+    <div id="page-dashboard" class="page active">
+      <div class="page-header">
+        <h2>Dashboard</h2>
+        <p>Overview of your AI widgets</p>
+      </div>
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-label">Total Widgets</div>
+          <div class="stat-value accent" id="stat-total">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Active Widgets</div>
+          <div class="stat-value success" id="stat-active">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">API Status</div>
+          <div class="stat-value purple" id="stat-status">—</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">🧩 Recent Widgets</div>
+        <div id="recent-widgets-list">
+          <div class="empty-state"><div class="spinner"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Widgets List -->
+    <div id="page-widgets" class="page">
+      <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <h2>All Widgets</h2>
+          <p>Manage your deployed widgets</p>
+        </div>
+        <button class="btn btn-primary" onclick="showPage('create')">➕ New Widget</button>
+      </div>
+      <div id="widgets-grid" class="widget-grid">
+        <div class="empty-state"><div class="spinner"></div></div>
+      </div>
+    </div>
+
+    <!-- Create Widget -->
+    <div id="page-create" class="page">
+      <div class="page-header">
+        <h2>Create Widget</h2>
+        <p>Set up a new AI chat widget</p>
+      </div>
+      <div class="card">
+        <div class="card-title">⚙️ Widget Configuration</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Widget Name *</label>
+            <input type="text" id="c-name" placeholder="e.g. Hospital Assistant" />
+          </div>
+          <div class="form-group">
+            <label>Chat Title</label>
+            <input type="text" id="c-title" placeholder="AI Assistant" />
+          </div>
+          <div class="form-group">
+            <label>Theme Color</label>
+            <input type="color" id="c-color" value="#4a9eff" />
+          </div>
+          <div class="form-group">
+            <label>Default Language</label>
+            <select id="c-language">
+              <option>English</option>
+              <option>Tamil</option>
+              <option>Hindi</option>
+              <option>Telugu</option>
+              <option>Malayalam</option>
+              <option>Kannada</option>
+              <option>French</option>
+              <option>German</option>
+              <option>Spanish</option>
+              <option>Arabic</option>
+              <option>Japanese</option>
+              <option>Chinese</option>
+            </select>
+          </div>
+          <div class="form-group full">
+            <label>Welcome Message</label>
+            <input type="text" id="c-welcome" placeholder="Hi! How can I help you today?" />
+          </div>
+          <div class="form-group full">
+            <label>Input Placeholder</label>
+            <input type="text" id="c-placeholder" placeholder="Ask me anything..." />
+          </div>
+          <div class="form-group full">
+            <label>Business Context *</label>
+            <textarea id="c-context" rows="4" placeholder="Describe what this assistant does. e.g. You are a helpful HR assistant for Acme Corp. You help employees with leave policies, attendance, and conduct guidelines."></textarea>
+          </div>
+        </div>
+        <div style="margin-top:20px;">
+          <button class="btn btn-primary" onclick="createWidget()" id="create-btn">
+            ➕ Create Widget
+          </button>
+        </div>
+      </div>
+
+      <!-- Result -->
+      <div id="create-result" style="display:none;">
+        <div class="card" style="border-color:var(--success);">
+          <div class="card-title" style="color:var(--success);">✅ Widget Created!</div>
+          <div class="form-grid" style="margin-bottom:16px;">
+            <div class="form-group">
+              <label>Widget ID</label>
+              <input type="text" id="result-widget-id" readonly />
+            </div>
+            <div class="form-group">
+              <label>API Key (save this!)</label>
+              <input type="text" id="result-api-key" readonly />
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div class="card-title">📋 Embed Code</div>
+          <p style="color:var(--muted);font-size:13px;margin-bottom:12px;">Copy and paste this before the &lt;/body&gt; tag on your website:</p>
+          <div class="code-block" id="result-embed-code">
+            <button class="copy-btn" onclick="copyEmbed()">Copy</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Upload PDF -->
+    <div id="page-upload" class="page">
+      <div class="page-header">
+        <h2>Upload PDF</h2>
+        <p>Add knowledge documents to a widget</p>
+      </div>
+      <div class="card">
+        <div class="card-title">🎯 Select Widget</div>
+        <div class="form-group" style="max-width:360px;">
+          <label>Widget</label>
+          <select id="upload-widget-select">
+            <option value="">— Select a widget —</option>
+          </select>
+        </div>
+        <div id="upload-key-group" style="display:none;margin-top:12px;">
+          <div class="form-group" style="max-width:360px;">
+            <label>Widget API Key</label>
+            <input type="password" id="upload-api-key" placeholder="Paste widget API key..." />
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">📄 Upload PDF</div>
+        <div class="upload-area" id="upload-area" onclick="document.getElementById('pdf-input').click()">
+          <div class="upload-icon">📂</div>
+          <p><strong>Click to browse</strong> or drag and drop</p>
+          <p style="margin-top:4px;">PDF files only</p>
+        </div>
+        <input type="file" id="pdf-input" accept=".pdf" style="display:none;" onchange="handleFileSelect(event)" />
+
+        <div id="upload-progress" style="display:none;margin-top:16px;">
+          <div style="display:flex;align-items:center;gap:10px;color:var(--muted);">
+            <div class="spinner"></div>
+            <span id="upload-status">Processing PDF...</span>
+          </div>
+        </div>
+
+        <div id="upload-files-list" style="margin-top:16px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Widget Detail Modal -->
+<div id="widget-modal" style="display:none;">
+  <div class="modal-overlay" onclick="closeModal(event)">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h3 id="modal-title">Widget Details</h3>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+      <div id="modal-body"></div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal()">Close</button>
+        <button class="btn btn-danger" id="modal-delete-btn">🗑 Delete Widget</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<script>
+  let MASTER_KEY = "";
+  let BASE_URL   = "";
+  let widgetsData = [];
+
+  // ── Auth ───────────────────────────────────────────────
+  function login() {
+    const key = document.getElementById("master-key-input").value.trim();
+    const url = document.getElementById("api-url-input").value.trim().replace(/\/$/, "");
+    if (!key || !url) {
+      document.getElementById("auth-error").textContent = "Please enter both fields.";
+      return;
+    }
+    MASTER_KEY = key;
+    BASE_URL   = url;
+    // Test the key
+    fetch(BASE_URL + "/admin/widgets", {
+      headers: { "x-api-key": MASTER_KEY }
+    }).then(function(r) {
+      if (r.ok) {
+        localStorage.setItem("aiw_key", MASTER_KEY);
+        localStorage.setItem("aiw_url", BASE_URL);
+        bootApp();
+      } else {
+        document.getElementById("auth-error").textContent = "Invalid API key or URL. Check and try again.";
+      }
+    }).catch(function() {
+      document.getElementById("auth-error").textContent = "Could not reach the API. Check the URL.";
+    });
+  }
+
+  function logout() {
+    localStorage.removeItem("aiw_key");
+    localStorage.removeItem("aiw_url");
+    location.reload();
+  }
+
+  // ── Boot ───────────────────────────────────────────────
+  window.addEventListener("DOMContentLoaded", function() {
+    const saved_key = localStorage.getItem("aiw_key");
+    const saved_url = localStorage.getItem("aiw_url");
+    if (saved_key && saved_url) {
+      MASTER_KEY = saved_key;
+      BASE_URL   = saved_url;
+      bootApp();
+    }
+    // Enter key on auth
+    document.getElementById("master-key-input").addEventListener("keydown", function(e) {
+      if (e.key === "Enter") login();
+    });
+    document.getElementById("api-url-input").addEventListener("keydown", function(e) {
+      if (e.key === "Enter") login();
+    });
+  });
+
+  function bootApp() {
+    document.getElementById("auth-gate").style.display = "none";
+    document.getElementById("app").style.display       = "flex";
+    document.getElementById("sidebar-url").textContent = BASE_URL.replace("https://", "");
+    loadDashboard();
+    loadWidgets();
+  }
+
+  // ── Navigation ─────────────────────────────────────────
+  function showPage(name) {
+    document.querySelectorAll(".page").forEach(function(p) { p.classList.remove("active"); });
+    document.querySelectorAll(".nav-item").forEach(function(n) { n.classList.remove("active"); });
+    document.getElementById("page-" + name).classList.add("active");
+    const navItems = document.querySelectorAll(".nav-item");
+    navItems.forEach(function(n) {
+      if (n.textContent.toLowerCase().includes(name === "create" ? "create" : name === "upload" ? "upload" : name === "widgets" ? "widgets" : "dashboard")) {
+        n.classList.add("active");
+      }
+    });
+    if (name === "upload") populateUploadSelect();
+  }
+
+  // ── API helpers ────────────────────────────────────────
+  async function apiFetch(path, options) {
+    const res = await fetch(BASE_URL + path, Object.assign({
+      headers: Object.assign({ "Content-Type": "application/json", "x-api-key": MASTER_KEY }, (options || {}).headers)
+    }, options));
+    return res;
+  }
+
+  // ── Toast ──────────────────────────────────────────────
+  function showToast(msg, type) {
+    type = type || "info";
+    const el       = document.createElement("div");
+    el.className   = "toast toast-" + type;
+    const icon     = type === "success" ? "✅" : type === "error" ? "❌" : "ℹ️";
+    el.textContent = icon + " " + msg;
+    document.getElementById("toast-container").appendChild(el);
+    setTimeout(function() { el.remove(); }, 3500);
+  }
+
+  // ── Dashboard ──────────────────────────────────────────
+  async function loadDashboard() {
+    // Check API status
+    try {
+      const r = await fetch(BASE_URL + "/");
+      document.getElementById("stat-status").textContent = r.ok ? "🟢 Live" : "🔴 Down";
+    } catch {
+      document.getElementById("stat-status").textContent = "🔴 Down";
+    }
+
+    try {
+      const r    = await apiFetch("/admin/widgets");
+      const data = await r.json();
+      widgetsData = data;
+      document.getElementById("stat-total").textContent  = data.length;
+      document.getElementById("stat-active").textContent = data.length;
+
+      if (data.length === 0) {
+        document.getElementById("recent-widgets-list").innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">🧩</div>
+            <h3>No widgets yet</h3>
+            <p>Create your first widget to get started</p>
+          </div>`;
+        return;
+      }
+
+      const recent = data.slice(-3).reverse();
+      document.getElementById("recent-widgets-list").innerHTML = recent.map(renderWidgetRow).join("");
+    } catch (e) {
+      document.getElementById("recent-widgets-list").innerHTML = '<p style="color:var(--danger)">Failed to load widgets.</p>';
+    }
+  }
+
+  function renderWidgetRow(w) {
+    const color = w.config && w.config.color ? w.config.color : "#4a9eff";
+    const title = w.config && w.config.title ? w.config.title : w.name;
+    return `
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);">
+        <div style="width:32px;height:32px;border-radius:50%;background:${color};flex-shrink:0;"></div>
+        <div style="flex:1;">
+          <div style="font-weight:600;">${escHtml(w.name)}</div>
+          <div style="color:var(--muted);font-size:12px;font-family:monospace;">${w.widget_id}</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="openWidgetModal('${w.widget_id}')">View</button>
+      </div>`;
+  }
+
+  // ── Widgets list ───────────────────────────────────────
+  async function loadWidgets() {
+    try {
+      const r    = await apiFetch("/admin/widgets");
+      const data = await r.json();
+      widgetsData = data;
+      renderWidgetGrid(data);
+    } catch {
+      document.getElementById("widgets-grid").innerHTML = '<p style="color:var(--danger)">Failed to load.</p>';
+    }
+  }
+
+  function renderWidgetGrid(data) {
+    if (data.length === 0) {
+      document.getElementById("widgets-grid").innerHTML = `
+        <div class="empty-state" style="grid-column:1/-1;">
+          <div class="empty-icon">🧩</div>
+          <h3>No widgets yet</h3>
+          <p>Create your first widget to get started</p>
+          <button class="btn btn-primary" style="margin-top:16px;" onclick="showPage('create')">➕ Create Widget</button>
+        </div>`;
+      return;
+    }
+    document.getElementById("widgets-grid").innerHTML = data.map(function(w) {
+      const color = w.config && w.config.color ? w.config.color : "#4a9eff";
+      const title = w.config && w.config.title ? w.config.title : w.name;
+      const lang  = w.config && w.config.language ? w.config.language : "English";
+      return `
+        <div class="widget-card">
+          <div class="widget-card-header">
+            <div class="widget-color-dot" style="background:${color};">💬</div>
+            <div class="widget-card-info">
+              <div class="widget-card-name">${escHtml(w.name)}</div>
+              <div class="widget-card-id">${w.widget_id}</div>
+            </div>
+          </div>
+          <div class="widget-card-body">
+            <div class="widget-card-meta">
+              <span class="badge badge-blue">🌐 ${escHtml(lang)}</span>
+              <span class="badge badge-green">✅ Active</span>
+              <span class="badge badge-purple">💬 ${escHtml(title)}</span>
+            </div>
+            <div class="widget-card-actions">
+              <button class="btn btn-ghost btn-sm" onclick="openWidgetModal('${w.widget_id}')">🔍 Details</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteWidget('${w.widget_id}')">🗑</button>
+            </div>
+          </div>
+        </div>`;
+    }).join("");
+  }
+
+  // ── Widget modal ───────────────────────────────────────
+  function openWidgetModal(widgetId) {
+    const w = widgetsData.find(function(x) { return x.widget_id === widgetId; });
+    if (!w) return;
+
+    const color   = w.config && w.config.color   ? w.config.color   : "#4a9eff";
+    const title   = w.config && w.config.title   ? w.config.title   : w.name;
+    const welcome = w.config && w.config.welcome ? w.config.welcome : "";
+    const lang    = w.config && w.config.language ? w.config.language : "English";
+    const apiUrl  = BASE_URL;
+
+    const embedCode = `&lt;script\n  src="${apiUrl}/static/widget.js"\n  data-widget-id="${w.widget_id}"\n  data-api="${apiUrl}"\n  data-title="${escHtml(title)}"\n  data-color="${color}"\n  data-welcome="${escHtml(welcome)}"\n  data-language="${lang}"&gt;\n&lt;/script&gt;`;
+
+    document.getElementById("modal-title").textContent = w.name;
+    document.getElementById("modal-body").innerHTML = `
+      <div class="form-grid" style="margin-bottom:16px;">
+        <div class="form-group">
+          <label>Widget ID</label>
+          <input type="text" value="${w.widget_id}" readonly />
+        </div>
+        <div class="form-group">
+          <label>Collection</label>
+          <input type="text" value="${w.collection}" readonly />
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div style="margin-bottom:8px;font-size:13px;font-weight:600;">📋 Embed Code</div>
+      <div class="code-block" style="position:relative;">
+        <button class="copy-btn" onclick="copyText(this)">Copy</button>
+        <span id="embed-code-text">${embedCode}</span>
+      </div>
+      <div class="divider"></div>
+      <div style="margin-bottom:8px;font-size:13px;font-weight:600;">⚙️ Config</div>
+      <div style="background:var(--bg);border-radius:8px;padding:12px;font-family:monospace;font-size:12px;color:var(--muted);">
+        ${JSON.stringify(w.config, null, 2).replace(/\n/g, "<br>").replace(/ /g, "&nbsp;")}
+      </div>`;
+
+    document.getElementById("modal-delete-btn").onclick = function() {
+      closeModal();
+      deleteWidget(w.widget_id);
+    };
+
+    document.getElementById("widget-modal").style.display = "flex";
+  }
+
+  function closeModal(e) {
+    if (!e || e.target === document.querySelector(".modal-overlay")) {
+      document.getElementById("widget-modal").style.display = "none";
+    }
+  }
+
+  // ── Create widget ──────────────────────────────────────
+  async function createWidget() {
+    const name    = document.getElementById("c-name").value.trim();
+    const context = document.getElementById("c-context").value.trim();
+
+    if (!name) { showToast("Widget name is required", "error"); return; }
+    if (!context) { showToast("Business context is required", "error"); return; }
+
+    const btn = document.getElementById("create-btn");
+    btn.disabled     = true;
+    btn.innerHTML    = '<div class="spinner"></div> Creating...';
+
+    const payload = {
+      name: name,
+      config: {
+        title:            document.getElementById("c-title").value.trim() || "AI Assistant",
+        color:            document.getElementById("c-color").value,
+        welcome:          document.getElementById("c-welcome").value.trim() || "Hi! How can I help you today?",
+        placeholder:      document.getElementById("c-placeholder").value.trim() || "Ask me anything...",
+        language:         document.getElementById("c-language").value,
+        business_context: context
+      }
+    };
+
+    try {
+      const r    = await apiFetch("/admin/widgets", { method: "POST", body: JSON.stringify(payload) });
+      const data = await r.json();
+
+      if (!r.ok) throw new Error(data.detail || "Failed");
+
+      showToast("Widget created successfully!", "success");
+
+      document.getElementById("result-widget-id").value = data.widget_id;
+      document.getElementById("result-api-key").value   = data.api_key;
+
+      const embedCode = `<script\n  src="${BASE_URL}/static/widget.js"\n  data-widget-id="${data.widget_id}"\n  data-api="${BASE_URL}"\n  data-title="${escHtml(payload.config.title)}"\n  data-color="${payload.config.color}"\n  data-welcome="${escHtml(payload.config.welcome)}"\n  data-language="${payload.config.language}">\n<\/script>`;
+
+      document.getElementById("result-embed-code").innerHTML =
+        '<button class="copy-btn" onclick="copyEmbed()">Copy</button>' + escHtml(embedCode);
+
+      document.getElementById("create-result").style.display = "block";
+      document.getElementById("create-result").scrollIntoView({ behavior: "smooth" });
+
+      // Refresh widgets
+      loadWidgets();
+      loadDashboard();
+    } catch (e) {
+      showToast("Error: " + e.message, "error");
+    } finally {
+      btn.disabled  = false;
+      btn.innerHTML = "➕ Create Widget";
+    }
+  }
+
+  // ── Delete widget ──────────────────────────────────────
+  async function deleteWidget(widgetId) {
+    if (!confirm("Delete this widget? This will also clear all its uploaded documents. This cannot be undone.")) return;
+    try {
+      const r = await apiFetch("/admin/widgets/" + widgetId, { method: "DELETE" });
+      if (r.ok) {
+        showToast("Widget deleted", "success");
+        loadWidgets();
+        loadDashboard();
+      } else {
+        showToast("Failed to delete", "error");
+      }
+    } catch {
+      showToast("Error deleting widget", "error");
+    }
+  }
+
+  // ── Upload PDF ─────────────────────────────────────────
+  function populateUploadSelect() {
+    const sel = document.getElementById("upload-widget-select");
+    sel.innerHTML = '<option value="">— Select a widget —</option>';
+    widgetsData.forEach(function(w) {
+      sel.innerHTML += `<option value="${w.widget_id}">${escHtml(w.name)} (${w.widget_id})</option>`;
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", function() {
+    document.getElementById("upload-widget-select").addEventListener("change", function() {
+      const val = this.value;
+      document.getElementById("upload-key-group").style.display = val ? "block" : "none";
+    });
+
+    // Drag and drop
+    const area = document.getElementById("upload-area");
+    area.addEventListener("dragover",  function(e) { e.preventDefault(); area.classList.add("drag-over"); });
+    area.addEventListener("dragleave", function()  { area.classList.remove("drag-over"); });
+    area.addEventListener("drop",      function(e) {
+      e.preventDefault();
+      area.classList.remove("drag-over");
+      const file = e.dataTransfer.files[0];
+      if (file) uploadPDF(file);
+    });
+  });
+
+  function handleFileSelect(e) {
+    const file = e.target.files[0];
+    if (file) uploadPDF(file);
+  }
+
+  async function uploadPDF(file) {
+    const widgetId = document.getElementById("upload-widget-select").value;
+    const apiKey   = document.getElementById("upload-api-key").value.trim();
+
+    if (!widgetId) { showToast("Please select a widget first", "error"); return; }
+    if (!apiKey)   { showToast("Please enter the widget API key", "error"); return; }
+    if (!file.name.endsWith(".pdf")) { showToast("Only PDF files are supported", "error"); return; }
+
+    document.getElementById("upload-progress").style.display = "block";
+    document.getElementById("upload-status").textContent = "Uploading " + file.name + "...";
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const r = await fetch(BASE_URL + "/upload", {
+        method:  "POST",
+        headers: { "x-api-key": apiKey },
+        body:    formData
+      });
+      const data = await r.json();
+
+      if (r.ok && data.message && data.message.includes("successfully")) {
+        showToast("PDF uploaded successfully!", "success");
+        document.getElementById("upload-files-list").innerHTML +=
+          `<div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);">
+            <span style="color:var(--success);">✅</span>
+            <span>${escHtml(file.name)}</span>
+            <span style="color:var(--muted);font-size:12px;margin-left:auto;">${(file.size / 1024).toFixed(1)} KB</span>
+          </div>`;
+      } else {
+        showToast(data.message || "Upload failed", "error");
+      }
+    } catch (e) {
+      showToast("Upload failed: " + e.message, "error");
+    } finally {
+      document.getElementById("upload-progress").style.display = "none";
+      document.getElementById("pdf-input").value = "";
+    }
+  }
+
+  // ── Helpers ────────────────────────────────────────────
+  function escHtml(text) {
+    if (!text) return "";
+    const d = document.createElement("div");
+    d.textContent = String(text);
+    return d.innerHTML;
+  }
+
+  function copyEmbed() {
+    const code = document.getElementById("result-embed-code").textContent.replace("Copy", "").trim();
+    navigator.clipboard.writeText(code).then(function() {
+      showToast("Embed code copied!", "success");
+    });
+  }
+
+  function copyText(btn) {
+    const text = document.getElementById("embed-code-text").textContent;
+    const decoded = text.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+    navigator.clipboard.writeText(decoded).then(function() {
+      btn.textContent = "Copied!";
+      setTimeout(function() { btn.textContent = "Copy"; }, 2000);
+      showToast("Copied to clipboard!", "success");
+    });
+  }
+</script>
+</body>
+</html>
