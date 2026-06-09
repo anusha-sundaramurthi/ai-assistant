@@ -331,8 +331,8 @@ def generate_answer(
     if not all(ord(char) < 128 for char in query):
         print(f"[Generator] Non-English query detected: '{query}'")
         query_for_search = invoke_llm([
-            {"role": "system", "content": "You are a translator. Translate to English."},
-            {"role": "user",   "content": f"Translate this to English, keep it concise: {query}"}
+            {"role": "system", "content": "You are a translator. Your only job is to translate the user's text to English. Return ONLY the translated English text. No explanations, no alternatives, no quotes, no extra text."},
+            {"role": "user",   "content": f"Translate this to English: {query}"}
         ])
         print(f"[Generator] English translation: '{query_for_search}'")
     else:
