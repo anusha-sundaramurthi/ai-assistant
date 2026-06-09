@@ -354,29 +354,6 @@ def generate_answer(
     else:
         query_for_search = query
 
-    was_translated = not all(ord(char) < 128 for char in query)
-
-    if was_translated:
-        print(f"[Generator] Non-English query: '{query}'")
-        query_for_search = translate_to_english(query)
-    else:
-        query_for_search = query
-
-    # Spell correct only for non-translated queries
-    if not was_translated:
-        query_for_search = invoke_llm([
-            {"role": "system", "content": "You correct spelling mistakes in user queries. Return ONLY the corrected query, nothing else. Do not change meaning or translate."},
-            {"role": "user",   "content": f"Correct any spelling mistakes: {query_for_search}"}
-        ])
-    print(f"[Generator] Corrected: '{query_for_search}'")
-
-    # Skip rewriting for translated queries
-    if was_translated:
-        rewritten_query = query_for_search
-        print(f"[Generator] Skipping rewrite for translated query: '{rewritten_query}'")
-    else:
-        rewritten_query = rewrite_query(query_for_search, history_text)
-
      
     # Spell-correct
     query_for_search = invoke_llm([
