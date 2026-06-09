@@ -308,11 +308,13 @@ Conversation so far:
 
 # ── 7. Main answer function ───────────────────────────────
 def generate_answer(
-    query:           str,
-    session_id:      str  = "default",
-    use_general:     bool = False,
-    language:        str  = "English",
-    collection_name: str  = "default"   
+    query:            str,
+    session_id:       str  = "default",
+    use_general:      bool = False,
+    language:         str  = "English",
+    collection_name:  str  = "default",
+    business_name:    str  = "AI Assistant",
+    business_context: str  = "You are a helpful assistant that answers questions accurately."
 ) -> dict:
     memory       = get_memory(session_id)
     history_vars = memory.load_memory_variables({})
@@ -350,7 +352,7 @@ def generate_answer(
     # ── Path A: General knowledge ─────────────────────────
     if use_general:
         print(f"[Generator] General knowledge path for: '{original_query}'")
-        system_prompt = GENERAL_ANSWER_SYSTEM_PROMPT.format(language_instruction=lang_instruction)
+        system_prompt = GENERAL_ANSWER_SYSTEM_PROMPT.format(business_name=business_name,business_context=business_context,language_instruction=lang_instruction)
         prompt = ChatPromptTemplate.from_messages([
             SystemMessagePromptTemplate.from_template(system_prompt),
             HumanMessagePromptTemplate.from_template("{question}")
@@ -369,7 +371,7 @@ def generate_answer(
         return {"answer": None, "rewritten_query": rewritten_query, "has_pdf_context": False}
 
     print(f"[Generator] PDF context found for: '{original_query}'")
-    system_prompt = PDF_ANSWER_SYSTEM_PROMPT.format(language_instruction=lang_instruction)
+    system_prompt = PDF_ANSWER_SYSTEM_PROMPT.format(business_name=business_name,business_context=business_context,language_instruction=lang_instruction)
     prompt = ChatPromptTemplate.from_messages([
         SystemMessagePromptTemplate.from_template(system_prompt),
         HumanMessagePromptTemplate.from_template("{question}")
