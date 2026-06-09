@@ -9,11 +9,11 @@ COLLECTION_NAME = os.getenv("COLLECTION_NAME", "default")
 
 GROQ_API_KEY    = os.getenv("GROQ_API_KEY")
 GEMINI_API_KEY  = os.getenv("GEMINI_API_KEY")
-NVIDIA_API_KEY  = os.getenv("NVIDIA_API_KEY")      # ← NEW
+OPENAI_API_KEY  = os.getenv("OPENAI_API_KEY")        # ← NEW
 
 MASTER_API_KEY  = os.getenv("MASTER_API_KEY")
 
-LLM_MODEL       = "llama-3.3-70b-versatile"
-FALLBACK_MODEL  = "gemini-2.0-flash"
+LLM_MODEL       = "gemini-2.5-flash-preview-05-20"   # primary
+FALLBACK_MODEL  = "llama-3.3-70b-versatile"           # fallback on Groq
 
 FASTAPI_URL     = os.getenv("FASTAPI_URL", "http://localhost:8000")

@@ -9,81 +9,91 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 import google.generativeai as genai
 
 from src.retriever import retrieve_docs
-from src.config import GROQ_API_KEY, GEMINI_API_KEY, LLM_MODEL, FALLBACK_MODEL
+from src.config import GROQ_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, LLM_MODEL, FALLBACK_MODEL
 
 # ── Configure Gemini for translation ─────────────────────
 genai.configure(api_key=GEMINI_API_KEY)
 
 # ── 1. LLMs ───────────────────────────────────────────────
-_groq_llm = ChatGroq(
-    api_key=GROQ_API_KEY,
-    model_name=LLM_MODEL,
+
+# Primary: Gemini 2.5 Flash
+_primary_llm = ChatGoogleGenerativeAI(
+    google_api_key=GEMINI_API_KEY,
+    model=LLM_MODEL,
     temperature=0.7
 )
-_gemini_llm = ChatGoogleGenerativeAI(
+_primary_rewrite_llm = ChatGoogleGenerativeAI(
     google_api_key=GEMINI_API_KEY,
-    model=FALLBACK_MODEL,
-    temperature=0.7
-)
-_groq_rewrite_llm = ChatGroq(
-    api_key=GROQ_API_KEY,
-    model_name=LLM_MODEL,
-    temperature=0
-)
-_gemini_rewrite_llm = ChatGoogleGenerativeAI(
-    google_api_key=GEMINI_API_KEY,
-    model=FALLBACK_MODEL,
+    model=LLM_MODEL,
     temperature=0
 )
 
+# Fallback: Groq Llama 3.3 70B
+_fallback_llm = ChatGroq(
+    api_key=GROQ_API_KEY,
+    model_name=FALLBACK_MODEL,
+    temperature=0.7
+)
+_fallback_rewrite_llm = ChatGroq(
+    api_key=GROQ_API_KEY,
+    model_name=FALLBACK_MODEL,
+    temperature=0
+)
+
+
 # ── 2. Fallback invoke ────────────────────────────────────
-GROQ_RATE_LIMIT_PHRASES = (
+GEMINI_RATE_LIMIT_PHRASES = (
     "rate_limit_exceeded", "rate limit",
     "429", "too many requests",
+    "quota", "resource_exhausted",
     "tokens per minute", "requests per minute",
 )
 
 def _is_rate_limit_error(e: Exception) -> bool:
-    return any(p in str(e).lower() for p in GROQ_RATE_LIMIT_PHRASES)
+    return any(p in str(e).lower() for p in GEMINI_RATE_LIMIT_PHRASES)
 
 def invoke_llm(messages, temperature: float = 0.7) -> str:
-    groq_llm   = _groq_llm   if temperature > 0 else _groq_rewrite_llm
-    gemini_llm = _gemini_llm if temperature > 0 else _gemini_rewrite_llm
+    primary_llm  = _primary_llm  if temperature > 0 else _primary_rewrite_llm
+    fallback_llm = _fallback_llm if temperature > 0 else _fallback_rewrite_llm
     try:
-        result = groq_llm.invoke(messages)
-        print("[LLM] Groq responded successfully.")
+        result = primary_llm.invoke(messages)
+        print("[LLM] Gemini 2.5 Flash responded successfully.")
         return result.content.strip()
     except Exception as e:
         if _is_rate_limit_error(e):
-            print(f"[LLM] Groq rate limit — switching to Gemini. Error: {e}")
-            result = gemini_llm.invoke(messages)
-            print("[LLM] Gemini responded successfully.")
+            print(f"[LLM] Gemini rate limit — switching to Groq. Error: {e}")
+            result = fallback_llm.invoke(messages)
+            print("[LLM] Groq responded successfully.")
             return result.content.strip()
         raise
 
 # ── 3. Translation using Gemini directly ─────────────────
 def translate_to_english(text: str) -> str:
-    """
-    Use Gemini for translation — much better at Indian languages.
-    Falls back to original text if translation fails.
-    """
     try:
-        model    = genai.GenerativeModel("gemini-1.5-flash")
+        model    = genai.GenerativeModel("gemini-2.5-flash-preview-05-20")
         response = model.generate_content(
-            f"""Translate the following text to English.
+            f"""Translate this text to English.
 Return ONLY the English translation as a single natural sentence.
 Do NOT include any explanation, alternatives, punctuation at the end, or extra text.
-Do NOT add a period at the end unless the original had one.
 
 Text to translate: {text}"""
         )
-        translated = response.text.strip().rstrip(".")
+        translated = response.text.strip().strip(".")
         print(f"[Translator] '{text}' → '{translated}'")
         return translated
     except Exception as e:
-        print(f"[Translator] Gemini translation failed: {e} — using original")
-        return text
-
+        print(f"[Translator] Gemini translation failed: {e} — trying Groq")
+        try:
+            result = _fallback_llm.invoke([
+                {"role": "system", "content": "Translate to English. Return ONLY the translation, nothing else."},
+                {"role": "user",   "content": f"Translate: {text}"}
+            ])
+            translated = result.content.strip()
+            print(f"[Translator] Groq translated: '{translated}'")
+            return translated
+        except Exception as e2:
+            print(f"[Translator] All translation failed: {e2}")
+            return text
 # ── 4. Memory ─────────────────────────────────────────────
 _memory_store: dict[str, ConversationBufferMemory] = {}
 

@@ -20,3 +20,4 @@ streamlit
 langchain-classic
 pyyaml
 httpx
+langdetect

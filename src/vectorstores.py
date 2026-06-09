@@ -2,7 +2,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams
 from src.config import QDRANT_HOST, QDRANT_API_KEY, COLLECTION_NAME
 
-VECTOR_SIZE = 1024  # BAAI/bge-m3
+VECTOR_SIZE = 1536
 
 def get_qdrant_client() -> QdrantClient:
     return QdrantClient(url=QDRANT_HOST, api_key=QDRANT_API_KEY)
