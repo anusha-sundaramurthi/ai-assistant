@@ -68,7 +68,7 @@ def translate_to_english(text: str) -> str:
     Falls back to original text if translation fails.
     """
     try:
-        model    = genai.GenerativeModel("gemini-2.0-flash")
+        model    = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(
             f"""Translate the following text to English.
 Return ONLY the English translation as a single natural sentence.
@@ -339,21 +339,67 @@ def generate_answer(
 
     original_query = query
 
-    # ── Detect if query is non-English ───────────────────
-    was_translated = not all(ord(char) < 128 for char in query)
+    # ── Language detection and translation ───────────────────
+    try:
+        from langdetect import detect
+        detected_lang = detect(query)
+        was_translated = detected_lang != "en"
+        print(f"[Generator] Detected language: '{detected_lang}'")
+    except Exception:
+        was_translated = not all(ord(char) < 128 for char in query)
 
     if was_translated:
-        print(f"[Generator] Non-English query detected: '{query}'")
-        query_for_search = translate_to_english(query)
-        print(f"[Generator] Translated to: '{query_for_search}'")
+        print(f"[Generator] Translating: '{query}'")
+        query_for_search = None
+
+    # Try gemini-1.5-flash first, then gemini-2.0-flash, then groq
+    translation_attempts = [
+        ("gemini-1.5-flash",   "gemini"),
+        ("gemini-2.0-flash",   "gemini"),
+        (LLM_MODEL,            "groq"),
+    ]
+
+    for model_name, provider in translation_attempts:
+        try:
+            if provider == "gemini":
+                model    = genai.GenerativeModel(model_name)
+                response = model.generate_content(
+                    f"Translate this text to English. Return ONLY the English translation as a natural sentence, nothing else:\n{query}"
+                )
+                query_for_search = response.text.strip().strip(".")
+            else:
+                query_for_search = invoke_llm([
+                    {"role": "system", "content": "You are a translator. Translate the given text to English. Return ONLY the English translation as a natural sentence. Nothing else."},
+                    {"role": "user",   "content": f"Translate to English: {query}"}
+                ])
+            print(f"[Generator] Translated using {model_name}: '{query_for_search}'")
+            break
+        except Exception as e:
+            print(f"[Generator] Translation failed with {model_name}: {e}")
+            continue
+
+    if not query_for_search or query_for_search == query:
+        # All translation attempts failed — use English query from language param
+        print(f"[Generator] All translations failed — asking user in {language}")
+        return {
+            "answer":          "I'm having trouble processing your query right now. Please try again in a moment or ask in English.",
+            "rewritten_query": query,
+            "has_pdf_context": False
+        }
     else:
         query_for_search = query
-        # Spell correct only for English queries
         query_for_search = invoke_llm([
-            {"role": "system", "content": "You correct spelling mistakes in user queries. Return ONLY the corrected query, nothing else. Do not change meaning or translate."},
-            {"role": "user",   "content": f"Correct any spelling mistakes: {query_for_search}"}
-        ])
-        print(f"[Generator] Corrected: '{query_for_search}'")
+        {"role": "system", "content": "Correct spelling mistakes in this query. Return ONLY the corrected query, nothing else."},
+        {"role": "user",   "content": f"Correct: {query_for_search}"}
+    ])
+    print(f"[Generator] Corrected: '{query_for_search}'")
+
+    # Skip rewriting for translated queries
+    if was_translated:
+        rewritten_query = query_for_search
+        print(f"[Generator] Using translated query for search: '{rewritten_query}'")
+    else:
+        rewritten_query = rewrite_query(query_for_search, history_text)
 
     # ── Rewrite only for English queries ─────────────────
     if was_translated:
