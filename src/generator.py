@@ -1,3 +1,4 @@
+from google import genai
 from langchain_classic.memory import ConversationBufferMemory
 from langchain_core.prompts import (
     ChatPromptTemplate,
@@ -48,6 +49,21 @@ GROQ_RATE_LIMIT_PHRASES = (
 def _is_rate_limit_error(e: Exception) -> bool:
     msg = str(e).lower()
     return any(phrase in msg for phrase in GROQ_RATE_LIMIT_PHRASES)
+
+def translate_to_english(text: str) -> str:
+    """Use Gemini for translation — much better at Indian languages than Groq."""
+    try:
+        model    = genai.GenerativeModel("gemini-2.0-flash")
+        response = model.generate_content(
+            f"Translate the following text to English. Return ONLY the English translation as a natural sentence. No explanations, no alternatives, no quotes:\n\n{text}"
+        )
+        translated = response.text.strip()
+        print(f"[Translator] '{text}' → '{translated}'")
+        return translated
+    except Exception as e:
+        print(f"[Translator] Gemini failed: {e} — using original query")
+        return text
+
 
 def invoke_llm(messages, temperature: float = 0.7) -> str:
     """
@@ -338,6 +354,30 @@ def generate_answer(
     else:
         query_for_search = query
 
+    was_translated = not all(ord(char) < 128 for char in query)
+
+    if was_translated:
+        print(f"[Generator] Non-English query: '{query}'")
+        query_for_search = translate_to_english(query)
+    else:
+        query_for_search = query
+
+    # Spell correct only for non-translated queries
+    if not was_translated:
+        query_for_search = invoke_llm([
+            {"role": "system", "content": "You correct spelling mistakes in user queries. Return ONLY the corrected query, nothing else. Do not change meaning or translate."},
+            {"role": "user",   "content": f"Correct any spelling mistakes: {query_for_search}"}
+        ])
+    print(f"[Generator] Corrected: '{query_for_search}'")
+
+    # Skip rewriting for translated queries
+    if was_translated:
+        rewritten_query = query_for_search
+        print(f"[Generator] Skipping rewrite for translated query: '{rewritten_query}'")
+    else:
+        rewritten_query = rewrite_query(query_for_search, history_text)
+
+     
     # Spell-correct
     query_for_search = invoke_llm([
         {"role": "system", "content": "You correct spelling mistakes in travel queries."},
