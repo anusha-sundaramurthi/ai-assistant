@@ -1,4 +1,3 @@
-from google import genai
 from langchain_classic.memory import ConversationBufferMemory
 from langchain_core.prompts import (
     ChatPromptTemplate,
@@ -7,87 +6,85 @@ from langchain_core.prompts import (
 )
 from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
+import google.generativeai as genai
 
 from src.retriever import retrieve_docs
 from src.config import GROQ_API_KEY, GEMINI_API_KEY, LLM_MODEL, FALLBACK_MODEL
 
-# ── 1. Build primary (Groq) and fallback (Gemini) LLMs ───
+# ── Configure Gemini for translation ─────────────────────
+genai.configure(api_key=GEMINI_API_KEY)
+
+# ── 1. LLMs ───────────────────────────────────────────────
 _groq_llm = ChatGroq(
     api_key=GROQ_API_KEY,
     model_name=LLM_MODEL,
     temperature=0.7
 )
-
 _gemini_llm = ChatGoogleGenerativeAI(
     google_api_key=GEMINI_API_KEY,
     model=FALLBACK_MODEL,
     temperature=0.7
 )
-
 _groq_rewrite_llm = ChatGroq(
     api_key=GROQ_API_KEY,
     model_name=LLM_MODEL,
     temperature=0
 )
-
 _gemini_rewrite_llm = ChatGoogleGenerativeAI(
     google_api_key=GEMINI_API_KEY,
     model=FALLBACK_MODEL,
     temperature=0
 )
 
-# ── 2. Smart invoke — falls back to Gemini on Groq rate limit ──
+# ── 2. Fallback invoke ────────────────────────────────────
 GROQ_RATE_LIMIT_PHRASES = (
-    "rate_limit_exceeded",
-    "rate limit",
-    "429",
-    "too many requests",
-    "tokens per minute",
-    "requests per minute",
+    "rate_limit_exceeded", "rate limit",
+    "429", "too many requests",
+    "tokens per minute", "requests per minute",
 )
 
 def _is_rate_limit_error(e: Exception) -> bool:
-    msg = str(e).lower()
-    return any(phrase in msg for phrase in GROQ_RATE_LIMIT_PHRASES)
-
-def translate_to_english(text: str) -> str:
-    """Use Gemini for translation — much better at Indian languages than Groq."""
-    try:
-        model    = genai.GenerativeModel("gemini-2.0-flash")
-        response = model.generate_content(
-            f"Translate the following text to English. Return ONLY the English translation as a natural sentence. No explanations, no alternatives, no quotes:\n\n{text}"
-        )
-        translated = response.text.strip()
-        print(f"[Translator] '{text}' → '{translated}'")
-        return translated
-    except Exception as e:
-        print(f"[Translator] Gemini failed: {e} — using original query")
-        return text
-
+    return any(p in str(e).lower() for p in GROQ_RATE_LIMIT_PHRASES)
 
 def invoke_llm(messages, temperature: float = 0.7) -> str:
-    """
-    Try Groq first. If a rate-limit error is raised, fall back to Gemini Flash.
-    Returns the response content as a string.
-    """
-    # Choose LLM based on requested temperature
     groq_llm   = _groq_llm   if temperature > 0 else _groq_rewrite_llm
     gemini_llm = _gemini_llm if temperature > 0 else _gemini_rewrite_llm
-
     try:
         result = groq_llm.invoke(messages)
         print("[LLM] Groq responded successfully.")
         return result.content.strip()
     except Exception as e:
         if _is_rate_limit_error(e):
-            print(f"[LLM] Groq rate limit hit — switching to Gemini Flash. Error: {e}")
+            print(f"[LLM] Groq rate limit — switching to Gemini. Error: {e}")
             result = gemini_llm.invoke(messages)
-            print("[LLM] Gemini Flash responded successfully.")
+            print("[LLM] Gemini responded successfully.")
             return result.content.strip()
-        raise  # re-raise non-rate-limit errors as usual
+        raise
 
+# ── 3. Translation using Gemini directly ─────────────────
+def translate_to_english(text: str) -> str:
+    """
+    Use Gemini for translation — much better at Indian languages.
+    Falls back to original text if translation fails.
+    """
+    try:
+        model    = genai.GenerativeModel("gemini-2.0-flash")
+        response = model.generate_content(
+            f"""Translate the following text to English.
+Return ONLY the English translation as a single natural sentence.
+Do NOT include any explanation, alternatives, punctuation at the end, or extra text.
+Do NOT add a period at the end unless the original had one.
 
-# ── 3. Per-session memory store ───────────────────────────
+Text to translate: {text}"""
+        )
+        translated = response.text.strip().rstrip(".")
+        print(f"[Translator] '{text}' → '{translated}'")
+        return translated
+    except Exception as e:
+        print(f"[Translator] Gemini translation failed: {e} — using original")
+        return text
+
+# ── 4. Memory ─────────────────────────────────────────────
 _memory_store: dict[str, ConversationBufferMemory] = {}
 
 def get_memory(session_id: str) -> ConversationBufferMemory:
@@ -103,7 +100,7 @@ def clear_memory(session_id: str) -> None:
     if session_id in _memory_store:
         del _memory_store[session_id]
 
-# ── 4. Language instruction ───────────────────────────────
+# ── 5. Language instruction ───────────────────────────────
 def get_language_instruction(language: str) -> str:
     return (
         f"\n\nLANGUAGE INSTRUCTION:\n"
@@ -113,16 +110,15 @@ def get_language_instruction(language: str) -> str:
         f"Even if the question is in a different language, answer in {language}."
     )
 
-# ── 5. Query rewriter ─────────────────────────────────────
-REWRITE_SYSTEM_PROMPT = """You are a query rewriter for a travel assistant.
+# ── 6. Query rewriter ─────────────────────────────────────
+REWRITE_SYSTEM_PROMPT = """You are a query rewriter for an AI assistant.
 Your ONLY job is to rewrite the user's latest question so it is completely
 self-contained and explicit — replacing all vague pronouns and references
-(like "there", "it", "that place", "both", "the first one", "that city")
-with the actual destination names found in the conversation history.
+(like "it", "that", "there", "both", "the first one")
+with the actual subjects found in the conversation history.
 Rules:
-- If the question mentions multiple destinations implicitly, name ALL of them.
 - If the question is already explicit and clear, return it unchanged.
-- Return ONLY the rewritten question. No explanation. No extra text.
+- Return ONLY the rewritten question. No explanation. No extra text. No punctuation at end.
 - Do not answer the question. Just rewrite it.
 - Always rewrite in English regardless of input language.
 Conversation history:
@@ -139,14 +135,13 @@ def rewrite_query(raw_query: str, chat_history_text: str) -> str:
     if not chat_history_text.strip():
         return raw_query
     vague_words = [
-        "there", "it", "that place", "both", "the city",
-        "that country", "first one", "second one", "those",
-        "the destination", "that", "here", "same place"
+        "it", "that", "there", "both", "this", "those",
+        "the same", "first one", "second one", "here"
     ]
     if not any(word in raw_query.lower() for word in vague_words):
         print(f"[QueryRewriter] Already explicit — skipping: '{raw_query}'")
         return raw_query
-    print(f"[QueryRewriter] Rewriting vague query: '{raw_query}'")
+    print(f"[QueryRewriter] Rewriting: '{raw_query}'")
     formatted = rewrite_prompt.format_messages(
         chat_history=chat_history_text,
         question=raw_query
@@ -155,7 +150,7 @@ def rewrite_query(raw_query: str, chat_history_text: str) -> str:
     print(f"[QueryRewriter] Result: '{rewritten}'")
     return rewritten
 
-# ── 6. Prompts ────────────────────────────────────────────
+# ── 7. Prompts ────────────────────────────────────────────
 PDF_ANSWER_SYSTEM_PROMPT = """You are a helpful and expert AI assistant for {business_name}.
 {business_context}
 
@@ -322,7 +317,7 @@ Conversation so far:
 {language_instruction}
 """
 
-# ── 7. Main answer function ───────────────────────────────
+# ── 8. Main answer function ───────────────────────────────
 def generate_answer(
     query:            str,
     session_id:       str  = "default",
@@ -332,6 +327,7 @@ def generate_answer(
     business_name:    str  = "AI Assistant",
     business_context: str  = "You are a helpful assistant that answers questions accurately."
 ) -> dict:
+
     memory       = get_memory(session_id)
     history_vars = memory.load_memory_variables({})
     history_msgs = history_vars.get("chat_history", [])
@@ -343,62 +339,97 @@ def generate_answer(
 
     original_query = query
 
-    # Translate non-ASCII queries to English for search
-    if not all(ord(char) < 128 for char in query):
+    # ── Detect if query is non-English ───────────────────
+    was_translated = not all(ord(char) < 128 for char in query)
+
+    if was_translated:
         print(f"[Generator] Non-English query detected: '{query}'")
-        query_for_search = invoke_llm([
-            {"role": "system", "content": "You are a professional translator. Translate the user's text to natural, grammatically correct English. Return ONLY the English translation as a proper sentence. No explanations, no alternatives, no quotes, no extra text whatsoever."},
-            {"role": "user",   "content": f"Translate this to English: {query}"}
-        ])
-        print(f"[Generator] English translation: '{query_for_search}'")
+        query_for_search = translate_to_english(query)
+        print(f"[Generator] Translated to: '{query_for_search}'")
     else:
         query_for_search = query
+        # Spell correct only for English queries
+        query_for_search = invoke_llm([
+            {"role": "system", "content": "You correct spelling mistakes in user queries. Return ONLY the corrected query, nothing else. Do not change meaning or translate."},
+            {"role": "user",   "content": f"Correct any spelling mistakes: {query_for_search}"}
+        ])
+        print(f"[Generator] Corrected: '{query_for_search}'")
 
-     
-    # Spell-correct
-    query_for_search = invoke_llm([
-        {"role": "system", "content": "You correct spelling mistakes in travel queries."},
-        {"role": "user",   "content": f"Correct spelling mistakes in this travel query. Return ONLY the corrected query. Do not change meaning.\n\nQuery: {query_for_search}"}
-    ])
-    print(f"[Generator] Corrected query: '{query_for_search}'")
+    # ── Rewrite only for English queries ─────────────────
+    if was_translated:
+        rewritten_query = query_for_search
+        print(f"[Generator] Skipping rewrite for translated query: '{rewritten_query}'")
+    else:
+        rewritten_query = rewrite_query(query_for_search, history_text)
 
-    rewritten_query  = rewrite_query(query_for_search, history_text)
     lang_instruction = get_language_instruction(language)
-    print(f"[Generator] Language: '{language}'")
+    print(f"[Generator] Language: '{language}' | Business: '{business_name}'")
+    print(f"[Generator] Final search query: '{rewritten_query}'")
 
     # ── Path A: General knowledge ─────────────────────────
     if use_general:
-        print(f"[Generator] General knowledge path for: '{original_query}'")
-        system_prompt = GENERAL_ANSWER_SYSTEM_PROMPT.format(business_name=business_name,business_context=business_context,language_instruction=lang_instruction)
-        prompt = ChatPromptTemplate.from_messages([
+        print(f"[Generator] General knowledge path")
+        system_prompt = GENERAL_ANSWER_SYSTEM_PROMPT.format(
+            business_name=business_name,
+            business_context=business_context,
+            language_instruction=lang_instruction
+        )
+        prompt    = ChatPromptTemplate.from_messages([
             SystemMessagePromptTemplate.from_template(system_prompt),
             HumanMessagePromptTemplate.from_template("{question}")
         ])
-        formatted = prompt.format_messages(chat_history=history_text, question=original_query)
-        answer    = invoke_llm(formatted)
+        formatted = prompt.format_messages(
+            chat_history=history_text,
+            question=original_query
+        )
+        answer = invoke_llm(formatted)
         memory.save_context({"input": original_query}, {"answer": answer})
-        return {"answer": answer, "rewritten_query": rewritten_query, "has_pdf_context": False}
+        return {
+            "answer":          answer,
+            "rewritten_query": rewritten_query,
+            "has_pdf_context": False
+        }
 
     # ── Path B: PDF retrieval ─────────────────────────────
-    docs = retrieve_docs(rewritten_query, collection_name)
+    docs    = retrieve_docs(rewritten_query, collection_name)
     context = "\n".join(docs)
 
     if not context.strip():
-        print(f"[Generator] No PDF context for: '{original_query}' → asking user")
-        return {"answer": None, "rewritten_query": rewritten_query, "has_pdf_context": False}
+        print(f"[Generator] No context found for: '{rewritten_query}'")
+        return {
+            "answer":          None,
+            "rewritten_query": rewritten_query,
+            "has_pdf_context": False
+        }
 
-    print(f"[Generator] PDF context found for: '{original_query}'")
-    system_prompt = PDF_ANSWER_SYSTEM_PROMPT.format(business_name=business_name,business_context=business_context,language_instruction=lang_instruction)
-    prompt = ChatPromptTemplate.from_messages([
+    print(f"[Generator] Context found — answering from documents")
+    system_prompt = PDF_ANSWER_SYSTEM_PROMPT.format(
+        business_name=business_name,
+        business_context=business_context,
+        language_instruction=lang_instruction
+    )
+    prompt    = ChatPromptTemplate.from_messages([
         SystemMessagePromptTemplate.from_template(system_prompt),
         HumanMessagePromptTemplate.from_template("{question}")
     ])
-    formatted = prompt.format_messages(context=context, chat_history=history_text, question=original_query)
-    answer    = invoke_llm(formatted)
+    formatted = prompt.format_messages(
+        context=context,
+        chat_history=history_text,
+        question=original_query
+    )
+    answer = invoke_llm(formatted)
 
-    if "NO_PDF_CONTEXT" in answer:
-        print(f"[Generator] LLM detected irrelevant context → asking user")
-        return {"answer": None, "rewritten_query": rewritten_query, "has_pdf_context": False}
+    if "NO_CONTEXT" in answer:
+        print(f"[Generator] LLM found no relevant context")
+        return {
+            "answer":          None,
+            "rewritten_query": rewritten_query,
+            "has_pdf_context": False
+        }
 
     memory.save_context({"input": original_query}, {"answer": answer})
-    return {"answer": answer, "rewritten_query": rewritten_query, "has_pdf_context": True}
+    return {
+        "answer":          answer,
+        "rewritten_query": rewritten_query,
+        "has_pdf_context": True
+    }
