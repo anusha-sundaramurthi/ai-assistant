@@ -2,8 +2,8 @@ import re
 from src.embeddings import get_embeddings
 from src.vectorstores import get_qdrant_client
 
-TOP_SCORE_THRESHOLD = 0.70
-MIN_CHUNK_SCORE     = 0.70
+TOP_SCORE_THRESHOLD = 0.60
+MIN_CHUNK_SCORE     = 0.60
 
 def normalize_query(query: str) -> str:
     replacements = {
