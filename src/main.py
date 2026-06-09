@@ -39,11 +39,11 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # ══════════════════════════════════════════════════════════
 
 class QueryRequest(BaseModel):
-    query:       str
-    session_id:  str  = "default"
-    use_general: bool = False
-    language:    str  = "English"
-    widget_id:   str  = "default"       # ← NEW
+    query:           str
+    session_id:      str  = "default"
+    use_general:     bool = False
+    language:        str  = "English"
+    widget_id:       str  = "default"
 
 @app.post("/ask")
 async def ask_question(req: QueryRequest):
@@ -51,12 +51,19 @@ async def ask_question(req: QueryRequest):
     if not tenant:
         raise HTTPException(status_code=404, detail="Widget not found")
 
+    # Pull business context from tenant config
+    config           = tenant.get("config", {})
+    business_name    = config.get("title", "AI Assistant")
+    business_context = config.get("business_context", "a helpful assistant")
+
     result = generate_answer(
         req.query,
         session_id=f"{req.widget_id}_{req.session_id}",
         use_general=req.use_general,
         language=req.language,
-        collection_name=tenant["collection"]
+        collection_name=tenant["collection"],
+        business_name=business_name,
+        business_context=business_context
     )
     return {
         "response":        result["answer"],
