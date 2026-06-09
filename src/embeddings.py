@@ -1,7 +1,7 @@
 import requests
-from src.config import HF_API_KEY, EMBEDDING_MODEL
+from src.config import HF_API_KEY
 
-API_URL = f"https://router.huggingface.co/hf-inference/models/{EMBEDDING_MODEL}/v1/feature-extraction"
+API_URL = "https://api-inference.huggingface.co/models/mixedbread-ai/mxbai-embed-large-v1"
 HEADERS = {
     "Authorization": f"Bearer {HF_API_KEY}",
     "Content-Type": "application/json"
