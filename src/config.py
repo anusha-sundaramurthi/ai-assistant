@@ -13,7 +13,7 @@ OPENAI_API_KEY  = os.getenv("OPENAI_API_KEY")        # ← NEW
 
 MASTER_API_KEY  = os.getenv("MASTER_API_KEY")
 
-LLM_MODEL       = "gemini-2.5-flash-preview-05-20"   # primary
+LLM_MODEL       = "gemini-2.5-flash"   # primary
 FALLBACK_MODEL  = "llama-3.3-70b-versatile"           # fallback on Groq
 
 FASTAPI_URL     = os.getenv("FASTAPI_URL", "http://localhost:8000")

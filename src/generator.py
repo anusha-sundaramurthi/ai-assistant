@@ -4,27 +4,26 @@ from langchain_core.prompts import (
     HumanMessagePromptTemplate,
     SystemMessagePromptTemplate,
 )
-from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 import google.generativeai as genai
 
 from src.retriever import retrieve_docs
-from src.config import GROQ_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, LLM_MODEL, FALLBACK_MODEL
+from src.config import GROQ_API_KEY, GEMINI_API_KEY, LLM_MODEL, FALLBACK_MODEL
 
-# ── Configure Gemini for translation ─────────────────────
+# ── Configure Gemini ──────────────────────────────────────
 genai.configure(api_key=GEMINI_API_KEY)
 
 # ── 1. LLMs ───────────────────────────────────────────────
-
 # Primary: Gemini 2.5 Flash
 _primary_llm = ChatGoogleGenerativeAI(
     google_api_key=GEMINI_API_KEY,
-    model=LLM_MODEL,
+    model="gemini-2.5-flash",
     temperature=0.7
 )
 _primary_rewrite_llm = ChatGoogleGenerativeAI(
     google_api_key=GEMINI_API_KEY,
-    model=LLM_MODEL,
+    model="gemini-2.5-flash",
     temperature=0
 )
 
@@ -40,21 +39,29 @@ _fallback_rewrite_llm = ChatGroq(
     temperature=0
 )
 
-
 # ── 2. Fallback invoke ────────────────────────────────────
-GEMINI_RATE_LIMIT_PHRASES = (
-    "rate_limit_exceeded", "rate limit",
-    "429", "too many requests",
-    "quota", "resource_exhausted",
-    "tokens per minute", "requests per minute",
+RATE_LIMIT_PHRASES = (
+    "rate_limit_exceeded",
+    "rate limit",
+    "429",
+    "too many requests",
+    "quota",
+    "resource_exhausted",
+    "tokens per minute",
+    "requests per minute",
 )
 
 def _is_rate_limit_error(e: Exception) -> bool:
-    return any(p in str(e).lower() for p in GEMINI_RATE_LIMIT_PHRASES)
+    return any(p in str(e).lower() for p in RATE_LIMIT_PHRASES)
 
 def invoke_llm(messages, temperature: float = 0.7) -> str:
+    """
+    Try Gemini 2.5 Flash first.
+    Fall back to Groq Llama 3.3 70B on rate limit.
+    """
     primary_llm  = _primary_llm  if temperature > 0 else _primary_rewrite_llm
     fallback_llm = _fallback_llm if temperature > 0 else _fallback_rewrite_llm
+
     try:
         result = primary_llm.invoke(messages)
         print("[LLM] Gemini 2.5 Flash responded successfully.")
@@ -62,38 +69,45 @@ def invoke_llm(messages, temperature: float = 0.7) -> str:
     except Exception as e:
         if _is_rate_limit_error(e):
             print(f"[LLM] Gemini rate limit — switching to Groq. Error: {e}")
-            result = fallback_llm.invoke(messages)
-            print("[LLM] Groq responded successfully.")
-            return result.content.strip()
+            try:
+                result = fallback_llm.invoke(messages)
+                print("[LLM] Groq responded successfully.")
+                return result.content.strip()
+            except Exception as e2:
+                print(f"[LLM] Groq also failed: {e2}")
+                raise e2
         raise
 
 # ── 3. Translation using Gemini directly ─────────────────
 def translate_to_english(text: str) -> str:
+    """
+    Translate non-English text to English.
+    Try Gemini first, fall back to Groq.
+    """
     try:
-        model    = genai.GenerativeModel("gemini-2.5-flash-preview-05-20")
+        model    = genai.GenerativeModel("gemini-2.5-flash")
         response = model.generate_content(
-            f"""Translate this text to English.
-Return ONLY the English translation as a single natural sentence.
-Do NOT include any explanation, alternatives, punctuation at the end, or extra text.
-
-Text to translate: {text}"""
+            f"Translate this text to English. Return ONLY the English translation as a natural sentence, nothing else:\n{text}"
         )
         translated = response.text.strip().strip(".")
-        print(f"[Translator] '{text}' → '{translated}'")
+        print(f"[Translator] Gemini: '{text}' → '{translated}'")
         return translated
     except Exception as e:
-        print(f"[Translator] Gemini translation failed: {e} — trying Groq")
-        try:
-            result = _fallback_llm.invoke([
-                {"role": "system", "content": "Translate to English. Return ONLY the translation, nothing else."},
-                {"role": "user",   "content": f"Translate: {text}"}
-            ])
-            translated = result.content.strip()
-            print(f"[Translator] Groq translated: '{translated}'")
-            return translated
-        except Exception as e2:
-            print(f"[Translator] All translation failed: {e2}")
-            return text
+        print(f"[Translator] Gemini failed: {e} — trying Groq")
+
+    try:
+        result = _fallback_llm.invoke([
+            {"role": "system", "content": "You are a translator. Translate the given text to English. Return ONLY the English translation as a natural sentence. Nothing else."},
+            {"role": "user",   "content": f"Translate to English: {text}"}
+        ])
+        translated = result.content.strip()
+        print(f"[Translator] Groq: '{text}' → '{translated}'")
+        return translated
+    except Exception as e:
+        print(f"[Translator] Groq also failed: {e}")
+
+    return text  # return original if all fail
+
 # ── 4. Memory ─────────────────────────────────────────────
 _memory_store: dict[str, ConversationBufferMemory] = {}
 
@@ -347,71 +361,46 @@ def generate_answer(
         role          = "User" if msg.type == "human" else "Assistant"
         history_text += f"{role}: {msg.content}\n"
 
-    original_query = query
+    original_query   = query
+    query_for_search = query  # always initialize
 
-    # ── Language detection and translation ───────────────────
+    # ── Language detection ────────────────────────────────
     try:
         from langdetect import detect
-        detected_lang = detect(query)
+        detected_lang  = detect(query)
         was_translated = detected_lang != "en"
         print(f"[Generator] Detected language: '{detected_lang}'")
     except Exception:
         was_translated = not all(ord(char) < 128 for char in query)
 
+    # ── Translation ───────────────────────────────────────
     if was_translated:
-        print(f"[Generator] Translating: '{query}'")
-        query_for_search = None
+        print(f"[Generator] Translating query: '{query}'")
+        translated = translate_to_english(query)
 
-    # Try gemini-1.5-flash first, then gemini-2.0-flash, then groq
-    translation_attempts = [
-        ("gemini-1.5-flash",   "gemini"),
-        ("gemini-2.0-flash",   "gemini"),
-        (LLM_MODEL,            "groq"),
-    ]
-
-    for model_name, provider in translation_attempts:
+        if translated and translated.strip() and translated.strip() != query.strip():
+            query_for_search = translated
+            print(f"[Generator] Translation successful: '{query_for_search}'")
+        else:
+            print(f"[Generator] Translation failed or unchanged — returning error")
+            return {
+                "answer":          "I'm having trouble processing your query right now. Please try again or ask in English.",
+                "rewritten_query": query,
+                "has_pdf_context": False
+            }
+    else:
+        # Spell correct English queries only
         try:
-            if provider == "gemini":
-                model    = genai.GenerativeModel(model_name)
-                response = model.generate_content(
-                    f"Translate this text to English. Return ONLY the English translation as a natural sentence, nothing else:\n{query}"
-                )
-                query_for_search = response.text.strip().strip(".")
-            else:
-                query_for_search = invoke_llm([
-                    {"role": "system", "content": "You are a translator. Translate the given text to English. Return ONLY the English translation as a natural sentence. Nothing else."},
-                    {"role": "user",   "content": f"Translate to English: {query}"}
-                ])
-            print(f"[Generator] Translated using {model_name}: '{query_for_search}'")
-            break
+            query_for_search = invoke_llm([
+                {"role": "system", "content": "Correct spelling mistakes in this query. Return ONLY the corrected query, nothing else. Do not change meaning or translate."},
+                {"role": "user",   "content": f"Correct: {query}"}
+            ])
+            print(f"[Generator] Corrected: '{query_for_search}'")
         except Exception as e:
-            print(f"[Generator] Translation failed with {model_name}: {e}")
-            continue
+            print(f"[Generator] Spell correction failed: {e} — using original")
+            query_for_search = query
 
-    if not query_for_search or query_for_search == query:
-        # All translation attempts failed — use English query from language param
-        print(f"[Generator] All translations failed — asking user in {language}")
-        return {
-            "answer":          "I'm having trouble processing your query right now. Please try again in a moment or ask in English.",
-            "rewritten_query": query,
-            "has_pdf_context": False
-        }
-    else:
-        query_for_search = query
-        query_for_search = invoke_llm([
-        {"role": "system", "content": "Correct spelling mistakes in this query. Return ONLY the corrected query, nothing else."},
-        {"role": "user",   "content": f"Correct: {query_for_search}"}
-    ])
-    print(f"[Generator] Corrected: '{query_for_search}'")
-
-    # Skip rewriting for translated queries
-    if was_translated:
-        rewritten_query = query_for_search
-        print(f"[Generator] Using translated query for search: '{rewritten_query}'")
-    else:
-        rewritten_query = rewrite_query(query_for_search, history_text)
-
-    # ── Rewrite only for English queries ─────────────────
+    # ── Query rewriting ───────────────────────────────────
     if was_translated:
         rewritten_query = query_for_search
         print(f"[Generator] Skipping rewrite for translated query: '{rewritten_query}'")
@@ -430,7 +419,7 @@ def generate_answer(
             business_context=business_context,
             language_instruction=lang_instruction
         )
-        prompt    = ChatPromptTemplate.from_messages([
+        prompt = ChatPromptTemplate.from_messages([
             SystemMessagePromptTemplate.from_template(system_prompt),
             HumanMessagePromptTemplate.from_template("{question}")
         ])
@@ -464,7 +453,7 @@ def generate_answer(
         business_context=business_context,
         language_instruction=lang_instruction
     )
-    prompt    = ChatPromptTemplate.from_messages([
+    prompt = ChatPromptTemplate.from_messages([
         SystemMessagePromptTemplate.from_template(system_prompt),
         HumanMessagePromptTemplate.from_template("{question}")
     ])
