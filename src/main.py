@@ -125,11 +125,12 @@ async def update_config(config: dict, tenant = Depends(verify_widget_key)):
 class CreateWidgetRequest(BaseModel):
     name:   str
     config: dict = {
-        "title":        "AI Assistant",
-        "color":        "#4a9eff",
-        "welcome":      "Hi! How can I help you?",
-        "language":     "English",
-        "placeholder":  "Ask me anything..."
+        "title":            "AI Assistant",
+        "color":            "#4a9eff",
+        "welcome":          "Hi! How can I help you?",
+        "language":         "English",
+        "placeholder":      "Ask me anything...",
+        "business_context": "You are a helpful assistant that answers questions accurately based on the provided documents."
     }
 
 @app.post("/admin/widgets", dependencies=[Depends(verify_master_key)])
