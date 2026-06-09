@@ -28,6 +28,14 @@ def retrieve_docs(query: str, collection_name: str, top_k: int = 10) -> list[str
     normalized_query = normalize_query(query)
     query_vector     = get_embeddings([normalized_query])[0]
 
+
+    # ── DEBUG ─────────────────────────────────────────────
+    print(f"[DEBUG] Query vector type: {type(query_vector)}")
+    print(f"[DEBUG] Query vector length: {len(query_vector)}")
+    print(f"[DEBUG] First 5 values: {query_vector[:5]}")
+    print(f"[DEBUG] Collection: {collection_name}")
+    # ── END DEBUG ─────────────────────────────────────────
+
     search_result = client.query_points(
         collection_name=collection_name,
         query=query_vector,
@@ -36,6 +44,16 @@ def retrieve_docs(query: str, collection_name: str, top_k: int = 10) -> list[str
     )
 
     hits = search_result.points
+
+    # ── DEBUG ─────────────────────────────────────────────
+    print(f"[DEBUG] Total hits: {len(hits)}")
+    if hits:
+        print(f"[DEBUG] Best score: {hits[0].score}")
+        print(f"[DEBUG] All scores: {[h.score for h in hits]}")
+    # ── END DEBUG ─────────────────────────────────────────
+
+
+
     if not hits:
         return []
 
