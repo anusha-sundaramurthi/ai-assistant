@@ -10,6 +10,7 @@ langchain-google-genai
 langchain-community
 langchain-text-splitters
 groq
+google-generativeai
 pymupdf
 pydantic
 requests
@@ -17,4 +18,3 @@ streamlit
 langchain-classic
 pyyaml
 httpx
-websockets

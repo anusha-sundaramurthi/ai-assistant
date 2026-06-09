@@ -9,7 +9,7 @@ COLLECTION_NAME = os.getenv("COLLECTION_NAME", "default")  # fallback only
 
 GROQ_API_KEY    = os.getenv("GROQ_API_KEY")
 GEMINI_API_KEY  = os.getenv("GEMINI_API_KEY")
-HF_API_KEY      = os.getenv("HF_API_KEY")
+
 
 MASTER_API_KEY  = os.getenv("MASTER_API_KEY")  # your secret admin key
 

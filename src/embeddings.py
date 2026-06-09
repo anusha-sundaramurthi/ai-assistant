@@ -1,20 +1,14 @@
-import requests
-from src.config import HF_API_KEY
+import google.generativeai as genai
+from src.config import GEMINI_API_KEY
 
-API_URL = "https://api-inference.huggingface.co/models/mixedbread-ai/mxbai-embed-large-v1"
-HEADERS = {
-    "Authorization": f"Bearer {HF_API_KEY}",
-    "Content-Type": "application/json"
-}
+genai.configure(api_key=GEMINI_API_KEY)
 
 def get_embeddings(texts: list[str]) -> list[list[float]]:
-    response = requests.post(
-        API_URL,
-        headers=HEADERS,
-        json={
-            "inputs": texts,
-            "options": {"wait_for_model": True}
-        }
-    )
-    response.raise_for_status()
-    return response.json()
+    result = []
+    for text in texts:
+        response = genai.embed_content(
+            model="models/text-multilingual-embedding-002",
+            content=text
+        )
+        result.append(response["embedding"])
+    return result
